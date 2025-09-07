@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Essay Brainstormer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Quill.js CSS for the rich-text editor -->
+    <link href="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.snow.css" rel="stylesheet" />
+    <!-- Marked.js library to convert Markdown to HTML -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        /* Basic styling for the application */
+        body { font-family: 'Inter', sans-serif; }
+        .chat-bubble-ai { background-color: #F3F3F3; }
+        .chat-bubble-user { background-color: #E1F0FF; }
+        
+        /* Modal styles for the pop-up */
+        .modal {
+            display: none; 
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.5);
+            -webkit-backdrop-filter: blur(4px);
+            backdrop-filter: blur(4px);
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 10% auto;
+            padding: 2rem;
+            width: 90%;
+            max-width: 500px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Custom styles for the read-only Quill editor to make it look clean */
+        #final-outline-editor .ql-container.ql-snow { border: none; }
+        #final-outline-editor .ql-editor { font-size: 1rem; line-height: 1.7; color: #333; }
+        #final-outline-editor .ql-editor h1, 
+        #final-outline-editor .ql-editor h2, 
+        #final-outline-editor .ql-editor h3 {
+             border-bottom: 1px solid #eee;
+             padding-bottom: 0.3em;
+             margin-bottom: 0.5em;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <!-- Main Container -->
+    <div class="container mx-auto max-w-4xl p-4 md:p-8">
+        
+        <!-- Header -->
+        <header class="flex items-center justify-between mb-6">
+            <div class="flex items-center space-x-4">
+                <span class="text-2xl font-bold text-blue-600">helloivy</span>
+                <h1 class="text-2xl text-gray-700">New Essay Brainstorming</h1>
+            </div>
+        </header>
+
+        <!-- Main Content Area: Holds either the chat or the final rich-text outline -->
+        <main class="bg-white border-2 border-purple-200 rounded-2xl shadow-sm p-4 md:p-6 flex flex-col h-[70vh]">
+            
+            <div id="content-area" class="flex-grow overflow-y-auto pr-4 space-y-6">
+                <!-- Chat history or the rich-text editor will be dynamically added here -->
+            </div>
+
+            <!-- Input Area: Hidden after the session is complete -->
+            <div id="input-area" class="mt-6 flex items-center space-x-4">
+                <textarea id="message-input" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none transition" rows="1" placeholder="Type your answer..."></textarea>
+                <button id="send-button" class="bg-blue-600 text-white font-semibold px-6 py-3 rounded-lg hover:bg-blue-700 transition duration-200 disabled:bg-gray-400">
+                    Send
+                </button>
+            </div>
+        </main>
+    </div>
+
+    <!-- User Details Modal -->
+    <div id="user-modal" class="modal">
+        <div class="modal-content">
+            <h2 class="text-xl font-bold mb-4">Start Your Session</h2>
+            <p class="text-gray-600 mb-6">Enter your details to begin the personalized brainstorming process.</p>
+            <div class="space-y-4">
+                <input type="text" id="name-input" placeholder="Name (e.g., Priya)" class="w-full p-2 border rounded-md">
+                <input type="text" id="stream-input" placeholder="Education Stream (e.g., STEM)" class="w-full p-2 border rounded-md">
+                <input type="text" id="major-input" placeholder="Major (e.g., Computer Science)" class="w-full p-2 border rounded-md">
+                <input type="text" id="college-input" placeholder="Target College (e.g., MIT)" class="w-full p-2 border rounded-md">
+                <button id="start-session-button" class="w-full bg-blue-600 text-white font-semibold py-2 rounded-md hover:bg-blue-700">Start Brainstorming</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quill.js Script -->
+    <script src="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.js"></script>
+    <script>
+        // --- DOM Element References ---
+        const contentArea = document.getElementById('content-area');
+        const inputArea = document.getElementById('input-area');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-button');
+        const userModal = document.getElementById('user-modal');
+        const startSessionButton = document.getElementById('start-session-button');
+
+        const API_BASE_URL = 'http://127.0.0.1:8000'; // Your FastAPI server URL
+
+        /**
+         * Adds a message to the chat history UI.
+         */
+        function addChatMessage(message, sender) {
+            const messageDiv = document.createElement('div');
+            const alignClass = sender === 'user' ? 'justify-end' : 'justify-start';
+            messageDiv.className = `flex items-start gap-3 ${alignClass}`;
+            
+            const bubbleClass = sender === 'ai' ? 'chat-bubble-ai' : 'chat-bubble-user';
+            const avatar = sender === 'ai' ? '🤖' : '🗣️';
+
+            const avatarEl = `<div class="text-2xl pt-2">${avatar}</div>`;
+            const messageEl = `
+                <div class="p-3 rounded-lg ${bubbleClass} max-w-lg">
+                    <p class="text-base">${message.replace(/\n/g, '<br>')}</p>
+                </div>
+            `;
+
+            messageDiv.innerHTML = sender === 'user' ? messageEl + avatarEl : avatarEl + messageEl;
+            
+            contentArea.appendChild(messageDiv);
+            contentArea.scrollTop = contentArea.scrollHeight; // Auto-scroll to the bottom
+        }
+
+        /**
+         * Displays the final essay outline in a rich-text editor.
+         */
+        function displayFinalOutline(markdownContent) {
+            contentArea.innerHTML = ''; // Clear chat history
+            inputArea.style.display = 'none'; // Hide the input field
+
+            const editorDiv = document.createElement('div');
+            editorDiv.id = 'final-outline-editor';
+            contentArea.appendChild(editorDiv);
+
+            const quill = new Quill('#final-outline-editor', {
+                theme: 'snow',
+                modules: { toolbar: false }, // No toolbar for read-only mode
+                readOnly: true
+            });
+
+            const htmlContent = marked.parse(markdownContent); // Convert Markdown to HTML
+            quill.clipboard.dangerouslyPasteHTML(htmlContent); // Set editor content
+        }
+
+        /**
+         * Toggles the loading state of the input controls.
+         */
+        function setLoadingState(isLoading) {
+            messageInput.disabled = isLoading;
+            sendButton.disabled = isLoading;
+            sendButton.textContent = isLoading ? 'Thinking...' : 'Send';
+        }
+
+        /**
+         * Handles the initial session start by collecting user data and fetching the first question.
+         */
+        async function handleStartSession() {
+            const name = document.getElementById('name-input').value.trim();
+            const stream = document.getElementById('stream-input').value.trim();
+            const major = document.getElementById('major-input').value.trim();
+            const college = document.getElementById('college-input').value.trim();
+
+            if (!name || !stream || !major || !college) {
+                alert('Please fill out all fields.');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/start-session`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, stream, major, college })
+                });
+
+                if (!response.ok) throw new Error(`Network response was not ok (${response.status})`);
+                
+                const data = await response.json();
+                
+                addChatMessage(`Great, ${name}! Let's begin. Here is your first personalized question:`, 'ai');
+                addChatMessage(data.response, 'ai');
+                
+                userModal.style.display = 'none'; // Hide the modal
+                setLoadingState(false);
+            } catch (error) {
+                console.error('Error starting session:', error);
+                alert('Could not start a new session. Please ensure the backend server is running and check the console for errors.');
+            }
+        }
+
+        /**
+         * Handles sending a user's chat message and displaying the AI's response.
+         */
+        async function handleSendMessage() {
+            const message = messageInput.value.trim();
+            if (!message) return;
+
+            addChatMessage(message, 'user');
+            messageInput.value = '';
+            setLoadingState(true);
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: message })
+                });
+
+                if (!response.ok) throw new Error(`Network response was not ok (${response.status})`);
+
+                const data = await response.json();
+
+                if (data.is_complete) {
+                    // If the session is complete, display the final outline in the editor
+                    displayFinalOutline(data.response);
+                } else {
+                    // Otherwise, continue the conversation
+                    addChatMessage(data.response, 'ai');
+                    setLoadingState(false);
+                }
+
+            } catch (error) {
+                console.error('Error sending message:', error);
+                addChatMessage('Sorry, something went wrong. Please try again.', 'ai');
+                setLoadingState(false);
+            }
+        }
+
+        // --- Event Listeners ---
+        window.addEventListener('load', () => {
+            userModal.style.display = 'block';
+            setLoadingState(true); // Disable input until the session starts
+        });
+
+        startSessionButton.addEventListener('click', handleStartSession);
+        sendButton.addEventListener('click', handleSendMessage);
+        messageInput.addEventListener('keydown', (event) => {
+            // Send message on Enter key press (but not Shift+Enter for new lines)
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                handleSendMessage();
+            }
+        });
+    </script>
+
+</body>
+</html>
+

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Essay Brainstormer</title>
+    <title>StorySpark - AI Essay Brainstormer</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Quill.js CSS for the rich-text editor -->
     <link href="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.snow.css" rel="stylesheet" />
@@ -15,7 +15,7 @@
         .chat-bubble-ai { background-color: #F3F3F3; }
         .chat-bubble-user { background-color: #E1F0FF; }
         
-        /* Modal styles for the pop-up */
+        /* Modal styles for the pop-ups */
         .modal {
             display: none; 
             position: fixed;
@@ -36,18 +36,51 @@
             width: 90%;
             max-width: 500px;
             border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 4px
+            6px rgba(0, 0, 0, 0.1);
+            animation: fadeIn 0.3s ease-out;
         }
 
-        /* Custom styles for the read-only Quill editor to make it look clean */
+        /* Custom styles for the read-only Quill editor */
         #final-outline-editor .ql-container.ql-snow { border: none; }
         #final-outline-editor .ql-editor { font-size: 1rem; line-height: 1.7; color: #333; }
-        #final-outline-editor .ql-editor h1, 
-        #final-outline-editor .ql-editor h2, 
-        #final-outline-editor .ql-editor h3 {
-             border-bottom: 1px solid #eee;
-             padding-bottom: 0.3em;
-             margin-bottom: 0.5em;
+        
+        /* Keyframe animation for chat messages */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .animate-fadeInUp {
+            animation: fadeInUp 0.5s ease-out forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        
+        .replay-speech-btn {
+            cursor: pointer;
+            opacity: 0.5;
+            transition: opacity 0.2s;
+        }
+        .replay-speech-btn:hover {
+            opacity: 1;
+        }
+
+        /* --- ADDED: Style for the microphone button when listening --- */
+        #mic-button.is-listening {
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
         }
     </style>
 </head>
@@ -59,23 +92,21 @@
         <!-- Header -->
         <header class="flex items-center justify-between mb-6">
             <div class="flex items-center space-x-4">
-                <span class="text-2xl font-bold text-blue-600">helloivy</span>
+                <span class="text-2xl font-bold text-blue-600">StorySpark ✨</span>
                 <h1 class="text-2xl text-gray-700">New Essay Brainstorming</h1>
             </div>
         </header>
 
-        <!-- Main Content Area: Holds either the chat or the final rich-text outline -->
+        <!-- Main Content Area -->
         <main class="bg-white border-2 border-purple-200 rounded-2xl shadow-sm p-4 md:p-6 flex flex-col h-[70vh]">
-            
             <div id="content-area" class="flex-grow overflow-y-auto pr-4 space-y-6">
-                <!-- Chat history or the rich-text editor will be dynamically added here -->
+                <!-- Chat/Outline content goes here -->
             </div>
-
-            <!-- Input Area: Hidden after the session is complete -->
+            <!-- --- MODIFIED: Input Area with Microphone Button --- -->
             <div id="input-area" class="mt-6 flex items-center space-x-4">
-                <textarea id="message-input" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none transition" rows="1" placeholder="Type your answer..."></textarea>
-                <button id="send-button" class="bg-blue-600 text-white font-semibold px-6 py-3 rounded-lg hover:bg-blue-700 transition duration-200 disabled:bg-gray-400">
-                    Send
+                <textarea id="message-input" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none transition" rows="1" placeholder="Click the mic to speak, or type here..."></textarea>
+                <button id="mic-button" class="bg-blue-600 text-white text-2xl w-14 h-12 flex-shrink-0 flex items-center justify-center rounded-lg hover:bg-blue-700 transition duration-200 disabled:bg-gray-400">
+                    🎤
                 </button>
             </div>
         </main>
@@ -96,6 +127,18 @@
         </div>
     </div>
 
+    <!-- Session Complete Modal -->
+    <div id="session-complete-modal" class="modal">
+        <div class="modal-content text-center">
+            <h2 class="text-2xl font-bold mb-4">Session Complete!</h2>
+            <p class="text-gray-600 mb-6">Your personalized essay outline is ready. What would you like to do next?</p>
+            <div class="flex justify-center space-x-4">
+                <button id="restart-button" class="w-full bg-blue-600 text-white font-semibold py-2 px-6 rounded-md hover:bg-blue-700">Restart Session</button>
+                <button id="exit-button" class="w-full bg-gray-300 text-gray-800 font-semibold py-2 px-6 rounded-md hover:bg-gray-400">Exit</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Quill.js Script -->
     <script src="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.js"></script>
     <script>
@@ -103,70 +146,86 @@
         const contentArea = document.getElementById('content-area');
         const inputArea = document.getElementById('input-area');
         const messageInput = document.getElementById('message-input');
-        const sendButton = document.getElementById('send-button');
+        // --- MODIFIED: Renamed sendButton to micButton ---
+        const micButton = document.getElementById('mic-button');
         const userModal = document.getElementById('user-modal');
         const startSessionButton = document.getElementById('start-session-button');
+        const sessionCompleteModal = document.getElementById('session-complete-modal');
+        const restartButton = document.getElementById('restart-button');
+        const exitButton = document.getElementById('exit-button');
 
-        const API_BASE_URL = 'http://127.0.0.1:8000'; // Your FastAPI server URL
+        const API_BASE_URL = 'http://127.0.0.1:8000';
+        
+        // --- ADDED: Speech Recognition Setup ---
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let recognition;
+        if (SpeechRecognition) {
+            recognition = new SpeechRecognition();
+            recognition.continuous = false; // Stop after a pause
+            recognition.lang = 'en-US';
+            recognition.interimResults = false;
+        } else {
+            console.warn("Speech recognition is not supported in this browser.");
+            micButton.disabled = true;
+        }
 
-        /**
-         * Adds a message to the chat history UI.
-         */
+        // --- Text-to-Speech Function ---
+        function speakMessage(text) {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(text);
+                window.speechSynthesis.speak(utterance);
+            } else {
+                console.warn("Text-to-speech is not supported in this browser.");
+            }
+        }
+
         function addChatMessage(message, sender) {
+            // ... (this function's content remains the same)
             const messageDiv = document.createElement('div');
             const alignClass = sender === 'user' ? 'justify-end' : 'justify-start';
             messageDiv.className = `flex items-start gap-3 ${alignClass}`;
-            
             const bubbleClass = sender === 'ai' ? 'chat-bubble-ai' : 'chat-bubble-user';
             const avatar = sender === 'ai' ? '🤖' : '🗣️';
-
+            const replayButton = sender === 'ai' ? `<span class="replay-speech-btn text-lg ml-2" data-text="${message.replace(/"/g, '&quot;')}">🔊</span>` : '';
             const avatarEl = `<div class="text-2xl pt-2">${avatar}</div>`;
-            const messageEl = `
-                <div class="p-3 rounded-lg ${bubbleClass} max-w-lg">
-                    <p class="text-base">${message.replace(/\n/g, '<br>')}</p>
-                </div>
-            `;
-
-            messageDiv.innerHTML = sender === 'user' ? messageEl + avatarEl : avatarEl + messageEl;
-            
+            const messageEl = `<div class="p-3 rounded-lg ${bubbleClass} max-w-lg">${message.replace(/\n/g, '<br>')}</div>`;
+            const messageContainer = document.createElement('div');
+            messageContainer.className = 'animate-fadeInUp flex items-center';
+            messageContainer.innerHTML = sender === 'user' ? messageEl + avatarEl : avatarEl + messageEl + replayButton;
+            messageDiv.appendChild(messageContainer);
             contentArea.appendChild(messageDiv);
-            contentArea.scrollTop = contentArea.scrollHeight; // Auto-scroll to the bottom
+            contentArea.scrollTop = contentArea.scrollHeight;
+            if (sender === 'ai') {
+                speakMessage(message);
+            }
         }
 
-        /**
-         * Displays the final essay outline in a rich-text editor.
-         */
         function displayFinalOutline(markdownContent) {
-            contentArea.innerHTML = ''; // Clear chat history
-            inputArea.style.display = 'none'; // Hide the input field
-
+            // ... (this function's content remains the same)
+            contentArea.innerHTML = '';
+            inputArea.style.display = 'none';
             const editorDiv = document.createElement('div');
             editorDiv.id = 'final-outline-editor';
             contentArea.appendChild(editorDiv);
-
             const quill = new Quill('#final-outline-editor', {
                 theme: 'snow',
-                modules: { toolbar: false }, // No toolbar for read-only mode
+                modules: { toolbar: false },
                 readOnly: true
             });
-
-            const htmlContent = marked.parse(markdownContent); // Convert Markdown to HTML
-            quill.clipboard.dangerouslyPasteHTML(htmlContent); // Set editor content
+            const htmlContent = marked.parse(markdownContent);
+            quill.clipboard.dangerouslyPasteHTML(htmlContent);
+            sessionCompleteModal.style.display = 'block';
         }
 
-        /**
-         * Toggles the loading state of the input controls.
-         */
         function setLoadingState(isLoading) {
             messageInput.disabled = isLoading;
-            sendButton.disabled = isLoading;
-            sendButton.textContent = isLoading ? 'Thinking...' : 'Send';
+            micButton.disabled = isLoading;
+            micButton.innerHTML = isLoading ? '...' : '🎤';
         }
 
-        /**
-         * Handles the initial session start by collecting user data and fetching the first question.
-         */
         async function handleStartSession() {
+            // ... (this function's content remains the same)
             const name = document.getElementById('name-input').value.trim();
             const stream = document.getElementById('stream-input').value.trim();
             const major = document.getElementById('major-input').value.trim();
@@ -176,84 +235,117 @@
                 alert('Please fill out all fields.');
                 return;
             }
-
             try {
                 const response = await fetch(`${API_BASE_URL}/start-session`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name, stream, major, college })
                 });
-
                 if (!response.ok) throw new Error(`Network response was not ok (${response.status})`);
-                
                 const data = await response.json();
-                
                 addChatMessage(`Great, ${name}! Let's begin. Here is your first personalized question:`, 'ai');
                 addChatMessage(data.response, 'ai');
-                
-                userModal.style.display = 'none'; // Hide the modal
+                userModal.style.display = 'none';
                 setLoadingState(false);
             } catch (error) {
                 console.error('Error starting session:', error);
                 alert('Could not start a new session. Please ensure the backend server is running and check the console for errors.');
             }
         }
-
-        /**
-         * Handles sending a user's chat message and displaying the AI's response.
-         */
+        
         async function handleSendMessage() {
+            // ... (this function's content remains the same)
             const message = messageInput.value.trim();
             if (!message) return;
-
             addChatMessage(message, 'user');
             messageInput.value = '';
             setLoadingState(true);
-
             try {
                 const response = await fetch(`${API_BASE_URL}/chat`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message: message })
                 });
-
                 if (!response.ok) throw new Error(`Network response was not ok (${response.status})`);
-
                 const data = await response.json();
-
                 if (data.is_complete) {
-                    // If the session is complete, display the final outline in the editor
                     displayFinalOutline(data.response);
                 } else {
-                    // Otherwise, continue the conversation
                     addChatMessage(data.response, 'ai');
                     setLoadingState(false);
                 }
-
             } catch (error) {
                 console.error('Error sending message:', error);
                 addChatMessage('Sorry, something went wrong. Please try again.', 'ai');
                 setLoadingState(false);
             }
         }
+        
+        // --- ADDED: Function to handle voice input ---
+        function handleVoiceInput() {
+            if (!recognition) return;
+            try {
+                micButton.classList.add('is-listening');
+                micButton.disabled = true;
+                recognition.start();
+            } catch(e) {
+                console.error("Could not start recognition:", e);
+                micButton.classList.remove('is-listening');
+                micButton.disabled = false;
+            }
+        }
 
         // --- Event Listeners ---
         window.addEventListener('load', () => {
             userModal.style.display = 'block';
-            setLoadingState(true); // Disable input until the session starts
+            setLoadingState(true);
         });
 
         startSessionButton.addEventListener('click', handleStartSession);
-        sendButton.addEventListener('click', handleSendMessage);
+        // --- MODIFIED: Changed event listener from sendButton to micButton ---
+        micButton.addEventListener('click', handleVoiceInput);
+        
         messageInput.addEventListener('keydown', (event) => {
-            // Send message on Enter key press (but not Shift+Enter for new lines)
             if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault();
                 handleSendMessage();
             }
         });
-    </script>
+        
+        contentArea.addEventListener('click', (event) => {
+            const target = event.target;
+            if (target && target.classList.contains('replay-speech-btn')) {
+                const textToSpeak = target.getAttribute('data-text');
+                if (textToSpeak) {
+                    speakMessage(textToSpeak);
+                }
+            }
+        });
 
+        restartButton.addEventListener('click', () => { window.location.reload(); });
+        exitButton.addEventListener('click', () => { window.close(); });
+        
+        // --- ADDED: Event listeners for the SpeechRecognition API ---
+        if (recognition) {
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                messageInput.value = transcript;
+                // Automatically send the message after transcription
+                handleSendMessage();
+            };
+
+            recognition.onend = () => {
+                micButton.classList.remove('is-listening');
+                // The button will be re-enabled by setLoadingState(false) after the AI responds
+            };
+
+            recognition.onerror = (event) => {
+                console.error('Speech recognition error:', event.error);
+                micButton.classList.remove('is-listening');
+                setLoadingState(false); // Re-enable controls on error
+            };
+        }
+    </script>
 </body>
 </html>
 

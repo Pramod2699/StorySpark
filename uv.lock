@@ -261,7 +261,7 @@ wheels = [
 ]
 
 [[package]]
-name = "task"
+name = "storyspark"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

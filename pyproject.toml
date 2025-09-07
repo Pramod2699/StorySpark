@@ -1,0 +1,11 @@
+[project]
+name = "task"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "customtkinter>=5.2.2",
+    "fastapi>=0.116.1",
+    "openai>=1.106.1",
+]
